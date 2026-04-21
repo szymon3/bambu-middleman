@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/szymon3/bambu-middleman/printer"
+	"github.com/szymon3/bambu-middleman/spoolman"
 )
 
 func main() {
@@ -31,12 +32,18 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	var spoolClient *spoolman.Client
+	if u := os.Getenv("SPOOLMAN_URL"); u != "" {
+		spoolClient = spoolman.New(u)
+		log.Info("spoolman integration enabled", "url", u)
+	}
+
 	mqttClient := printer.NewMQTTClient(cfg, log)
 
 	// Run MQTT connection loop in background; closes Events() channel on return.
 	go mqttClient.Run(ctx)
 
-	obs := NewObserver(cfg, mqttClient, log)
+	obs := NewObserver(cfg, mqttClient, log, spoolClient)
 	obs.Run(ctx)
 
 	log.Info("observer stopped")
