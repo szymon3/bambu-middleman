@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/szymon3/bambu-middleman/auditlog"
 	"github.com/szymon3/bambu-middleman/gcode"
 	"github.com/szymon3/bambu-middleman/printer"
 	"github.com/szymon3/bambu-middleman/spoolman"
@@ -18,17 +19,19 @@ type Observer struct {
 	cfg      printer.Config
 	mqtt     *printer.MQTTClient
 	log      *slog.Logger
-	spoolman *spoolman.Client // nil = disabled
+	spoolman *spoolman.Client  // nil = disabled
+	audit    *auditlog.Logger  // nil = disabled
 }
 
 // NewObserver creates an Observer wired to the given MQTT client.
-// spoolClient may be nil to disable Spoolman integration.
-func NewObserver(cfg printer.Config, mqttClient *printer.MQTTClient, log *slog.Logger, spoolClient *spoolman.Client) *Observer {
+// spoolClient and auditLogger may be nil to disable their respective integrations.
+func NewObserver(cfg printer.Config, mqttClient *printer.MQTTClient, log *slog.Logger, spoolClient *spoolman.Client, auditLogger *auditlog.Logger) *Observer {
 	return &Observer{
 		cfg:      cfg,
 		mqtt:     mqttClient,
 		log:      log,
 		spoolman: spoolClient,
+		audit:    auditLogger,
 	}
 }
 
@@ -146,10 +149,54 @@ func (o *Observer) logResult(ctx context.Context, log *slog.Logger, result *gcod
 	}
 	log.Info("print parsed", args...)
 
+	var spoolmanSuccess *bool
+	var spoolmanWeightG *float64
+	var spoolmanError string
 	if o.spoolman != nil && spoolmanID != 0 {
-		if err := o.spoolman.UseSpool(ctx, spoolmanID, total.WeightG); err != nil {
+		w := total.WeightG
+		spoolmanWeightG = &w
+		if err := o.spoolman.UseSpool(ctx, spoolmanID, w); err != nil {
 			log.Error("spoolman update failed", "err", err)
+			f := false
+			spoolmanSuccess = &f
+			spoolmanError = err.Error()
+		} else {
+			t := true
+			spoolmanSuccess = &t
 		}
+	}
+
+	if o.audit != nil {
+		var spoolID *int
+		if spoolmanID != 0 {
+			id := spoolmanID
+			spoolID = &id
+		}
+		var filamentNotes string
+		if len(meta.FilamentNotes) > 0 {
+			filamentNotes = meta.FilamentNotes[0]
+		}
+		o.audit.Log(auditlog.Entry{
+			PrinterIP:       o.cfg.PrinterIP,
+			PrinterSerial:   o.cfg.Serial,
+			PrintState:      event.State,
+			GCodeFile:       event.GCodeFile,
+			SubtaskName:     event.SubtaskName,
+			LastLayerNum:    event.LastLayerNum,
+			ParseStatus:     result.Status,
+			LayersPrinted:   layersPrinted,
+			FilamentType:    result.Config.FilamentType,
+			FilamentVendor:  result.Config.FilamentVendor,
+			StartupWeightG:  result.StartupUsage.WeightG,
+			LayerWeightG:    layerUsage.WeightG,
+			FooterWeightG:   result.Footer.FilamentUsage.WeightG,
+			TotalWeightG:    total.WeightG,
+			SpoolmanID:      spoolID,
+			SpoolmanWeightG: spoolmanWeightG,
+			SpoolmanSuccess: spoolmanSuccess,
+			SpoolmanError:   spoolmanError,
+			FilamentNotes:   filamentNotes,
+		})
 	}
 }
 
