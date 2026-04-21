@@ -28,14 +28,16 @@ type PrintPayload struct {
 	GCodeFile   string     `json:"gcode_file"`
 	SubtaskName string     `json:"subtask_name"`
 	Progress    int        `json:"mc_percent"`
+	LayerNum    int        `json:"layer_num"` // current layer, 1-indexed (layer 1 → 1); 0 means absent
 	SequenceID  string     `json:"sequence_id"`
 }
 
 // PrintEvent is emitted when a print reaches a terminal state.
 type PrintEvent struct {
-	State       PrintState
-	GCodeFile   string // bare filename, e.g. "my_model.gcode"
-	SubtaskName string
+	State        PrintState
+	GCodeFile    string // bare filename, e.g. "my_model.gcode"
+	SubtaskName  string
+	LastLayerNum int // last layer_num received from MQTT (1-indexed); 0 if unknown
 }
 
 // GCodeFTPSPath returns the FTPS path for the gcode file on the printer.

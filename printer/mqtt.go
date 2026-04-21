@@ -33,6 +33,7 @@ type MQTTClient struct {
 	printActive     bool   // true after PREPARE/RUNNING, reset on terminal event
 	lastGCodeFile   string // captured from any non-empty gcode_file in flight
 	lastSubtaskName string // captured from any non-empty subtask_name in flight
+	lastLayerNum    int    // last layer_num received (1-indexed); 0 means unknown
 }
 
 // NewMQTTClient creates a new MQTTClient. Call Run to start the connection loop.
@@ -166,9 +167,6 @@ func (c *MQTTClient) handleMessage(_ mqtt.Client, msg mqtt.Message) {
 	}
 
 	p := report.Print
-	if p.GCodeState == "" {
-		return
-	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -182,25 +180,46 @@ func (c *MQTTClient) handleMessage(_ mqtt.Client, msg mqtt.Message) {
 		c.lastSubtaskName = p.SubtaskName
 	}
 
+	// Layer transitions arrive as standalone messages with layer_num set but
+	// gcode_state absent. Capture these whenever a print is active.
+	if p.LayerNum > 0 && c.printActive {
+		c.lastLayerNum = p.LayerNum
+		c.log.Debug("layer_num update", "layer_num", p.LayerNum)
+	}
+
+	if p.GCodeState == "" {
+		return
+	}
+
 	switch p.GCodeState {
 	case StatePrepare, StateRunning:
+		if !c.printActive {
+			// New print starting — reset layer counter so a previous print's
+			// layer_num (present in periodic idle broadcasts) cannot contaminate.
+			c.lastLayerNum = 0
+		}
 		c.printActive = true
+		if p.LayerNum > 0 {
+			c.lastLayerNum = p.LayerNum
+		}
 	case StateIdle:
 		c.printActive = false
 	case StateFinish, StateFailed:
 		if !c.printActive {
-			// Spurious terminal state — printer sends FINISH at startup/idle.
+			// Spurious terminal state — printer sends FINISH/FAILED at startup/idle.
 			c.log.Debug("terminal state with no active print, ignoring", "state", p.GCodeState)
 			return
 		}
 
 		file := c.lastGCodeFile
 		subtask := c.lastSubtaskName
+		layerNum := c.lastLayerNum
 
 		// Always reset so subsequent duplicate FINISH messages are ignored.
 		c.printActive = false
 		c.lastGCodeFile = ""
 		c.lastSubtaskName = ""
+		c.lastLayerNum = 0
 
 		if file == "" {
 			c.log.Warn("terminal state with no gcode_file tracked, skipping", "state", p.GCodeState)
@@ -208,9 +227,10 @@ func (c *MQTTClient) handleMessage(_ mqtt.Client, msg mqtt.Message) {
 		}
 
 		event := PrintEvent{
-			State:       p.GCodeState,
-			GCodeFile:   file,
-			SubtaskName: subtask,
+			State:        p.GCodeState,
+			GCodeFile:    file,
+			SubtaskName:  subtask,
+			LastLayerNum: layerNum,
 		}
 		select {
 		case c.events <- event:
