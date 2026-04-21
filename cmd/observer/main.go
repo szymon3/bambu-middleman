@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/szymon3/bambu-middleman/auditlog"
 	"github.com/szymon3/bambu-middleman/printer"
 	"github.com/szymon3/bambu-middleman/spoolman"
 )
@@ -38,12 +39,24 @@ func main() {
 		log.Info("spoolman integration enabled", "url", u)
 	}
 
+	var auditLogger *auditlog.Logger
+	if dbPath := os.Getenv("AUDIT_DB_PATH"); dbPath != "" {
+		var err error
+		auditLogger, err = auditlog.Open(dbPath, log)
+		if err != nil {
+			log.Error("audit log disabled", "err", err)
+		} else {
+			log.Info("audit log enabled", "path", dbPath)
+			defer auditLogger.Close()
+		}
+	}
+
 	mqttClient := printer.NewMQTTClient(cfg, log)
 
 	// Run MQTT connection loop in background; closes Events() channel on return.
 	go mqttClient.Run(ctx)
 
-	obs := NewObserver(cfg, mqttClient, log, spoolClient)
+	obs := NewObserver(cfg, mqttClient, log, spoolClient, auditLogger)
 	obs.Run(ctx)
 
 	log.Info("observer stopped")
