@@ -252,3 +252,57 @@ func TestGCodeFileTracking(t *testing.T) {
 		}
 	})
 }
+
+func TestLayerTracking(t *testing.T) {
+	t.Run("layer_num updates are accumulated", func(t *testing.T) {
+		c := newTestClient()
+		sendMessage(c, `{"print":{"gcode_state":"RUNNING","gcode_file":"model.gcode","layer_num":3}}`)
+		sendMessage(c, `{"print":{"gcode_state":"RUNNING","layer_num":7}}`)
+		sendMessage(c, `{"print":{"gcode_state":"FAILED"}}`)
+		ev := expectEvent(t, c)
+		if ev.LastLayerNum != 7 {
+			t.Errorf("LastLayerNum = %d, want 7", ev.LastLayerNum)
+		}
+	})
+
+	t.Run("FINISH event carries last layer", func(t *testing.T) {
+		c := newTestClient()
+		sendMessage(c, `{"print":{"gcode_state":"RUNNING","gcode_file":"model.gcode","layer_num":5}}`)
+		sendMessage(c, `{"print":{"gcode_state":"FINISH"}}`)
+		ev := expectEvent(t, c)
+		if ev.LastLayerNum != 5 {
+			t.Errorf("LastLayerNum = %d, want 5", ev.LastLayerNum)
+		}
+	})
+
+	t.Run("layer_num reset after terminal event", func(t *testing.T) {
+		c := newTestClient()
+		// First print
+		sendMessage(c, `{"print":{"gcode_state":"RUNNING","gcode_file":"a.gcode","layer_num":10}}`)
+		sendMessage(c, `{"print":{"gcode_state":"FINISH"}}`)
+		expectEvent(t, c)
+
+		// Second print — starts with layer_num=0 (omitted), should not carry over first print's layer
+		sendMessage(c, `{"print":{"gcode_state":"RUNNING","gcode_file":"b.gcode"}}`)
+		sendMessage(c, `{"print":{"gcode_state":"FINISH"}}`)
+		ev := expectEvent(t, c)
+		if ev.LastLayerNum != 0 {
+			t.Errorf("LastLayerNum = %d after reset, want 0", ev.LastLayerNum)
+		}
+	})
+
+	t.Run("state-less layer_num messages are captured mid-print", func(t *testing.T) {
+		// Real-world pattern: dedicated layer-transition messages arrive with
+		// only layer_num set and no gcode_state (field absent → empty string).
+		c := newTestClient()
+		sendMessage(c, `{"print":{"gcode_state":"RUNNING","gcode_file":"model.gcode"}}`)
+		sendMessage(c, `{"print":{"layer_num":1}}`) // no gcode_state
+		sendMessage(c, `{"print":{"layer_num":2}}`)
+		sendMessage(c, `{"print":{"layer_num":3}}`)
+		sendMessage(c, `{"print":{"gcode_state":"FAILED"}}`) // FAILED has no layer_num
+		ev := expectEvent(t, c)
+		if ev.LastLayerNum != 3 {
+			t.Errorf("LastLayerNum = %d, want 3", ev.LastLayerNum)
+		}
+	})
+}

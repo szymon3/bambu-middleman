@@ -79,12 +79,36 @@ func (o *Observer) handleEvent(ctx context.Context, event printer.PrintEvent) {
 		return
 	}
 
-	o.logResult(log, result, meta)
+	o.logResult(log, result, meta, event)
 }
 
-func (o *Observer) logResult(log *slog.Logger, result *gcode.PrintFile, meta printer.ThreeMFInfo) {
-	total := result.TotalUsage()
-	layerTotal, _ := result.ComputedUsage(0)
+func (o *Observer) logResult(log *slog.Logger, result *gcode.PrintFile, meta printer.ThreeMFInfo, event printer.PrintEvent) {
+	// For completed prints use all layers. For failed/cancelled prints only
+	// count layers that were actually extruded, using the last layer_num from MQTT.
+	var layerUsage gcode.FilamentUsage
+	var layersPrinted int
+	if event.State == printer.StateFailed && event.LastLayerNum > 0 {
+		// layer_num is 1-indexed: layer_num=4 means layer 4 was the last printed.
+		upTo := event.LastLayerNum
+		if upTo > len(result.Layers) {
+			upTo = len(result.Layers)
+		}
+		var err error
+		layerUsage, err = result.ComputedUsage(upTo)
+		if err != nil {
+			log.Warn("layer usage computation failed, falling back to full", "err", err)
+			layerUsage, _ = result.ComputedUsage(0)
+		}
+		layersPrinted = upTo
+	} else {
+		if event.State == printer.StateFailed {
+			log.Warn("failed print with unknown last layer, reporting full gcode usage")
+		}
+		layerUsage, _ = result.ComputedUsage(0)
+		layersPrinted = len(result.Layers)
+	}
+
+	total := addUsage(result.StartupUsage, layerUsage)
 
 	statusStr := parseStatusString(result.Status)
 
@@ -102,10 +126,11 @@ func (o *Observer) logResult(log *slog.Logger, result *gcode.PrintFile, meta pri
 	args := []any{
 		"parse_status", statusStr,
 		"layers", len(result.Layers),
+		"layers_printed", layersPrinted,
 		"total_weight_g", round2(total.WeightG),
 		"total_length_mm", round2(total.LengthMM),
 		"total_volume_cm3", round2(total.VolumeCM3),
-		"layer_weight_g", round2(layerTotal.WeightG),
+		"layer_weight_g", round2(layerUsage.WeightG),
 		"startup_weight_g", round2(result.StartupUsage.WeightG),
 		"footer_weight_g", round2(result.Footer.FilamentUsage.WeightG),
 		"filament_type", result.Config.FilamentType,
@@ -131,4 +156,12 @@ func parseStatusString(s gcode.ParseStatus) string {
 
 func round2(f float64) float64 {
 	return float64(int(f*100+0.5)) / 100
+}
+
+func addUsage(a, b gcode.FilamentUsage) gcode.FilamentUsage {
+	return gcode.FilamentUsage{
+		LengthMM:  a.LengthMM + b.LengthMM,
+		VolumeCM3: a.VolumeCM3 + b.VolumeCM3,
+		WeightG:   a.WeightG + b.WeightG,
+	}
 }

@@ -11,7 +11,11 @@ import (
 )
 
 func main() {
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	level := slog.LevelInfo
+	if os.Getenv("LOG_LEVEL") == "DEBUG" {
+		level = slog.LevelDebug
+	}
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
 
 	cfg, err := printer.LoadFromEnv()
 	if err != nil {
