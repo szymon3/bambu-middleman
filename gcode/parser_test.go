@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const samplePath = "../sample_print.gcode"
+const samplePath = "testdata/sample_print.gcode"
 
 func mustParse(t *testing.T) *PrintFile {
 	t.Helper()
