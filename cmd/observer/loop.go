@@ -9,22 +9,26 @@ import (
 
 	"github.com/szymon3/bambu-middleman/gcode"
 	"github.com/szymon3/bambu-middleman/printer"
+	"github.com/szymon3/bambu-middleman/spoolman"
 )
 
 // Observer consumes PrintEvents from the MQTT client, downloads the GCode file
 // via FTPS, parses it, and logs structured results.
 type Observer struct {
-	cfg  printer.Config
-	mqtt *printer.MQTTClient
-	log  *slog.Logger
+	cfg      printer.Config
+	mqtt     *printer.MQTTClient
+	log      *slog.Logger
+	spoolman *spoolman.Client // nil = disabled
 }
 
 // NewObserver creates an Observer wired to the given MQTT client.
-func NewObserver(cfg printer.Config, mqttClient *printer.MQTTClient, log *slog.Logger) *Observer {
+// spoolClient may be nil to disable Spoolman integration.
+func NewObserver(cfg printer.Config, mqttClient *printer.MQTTClient, log *slog.Logger, spoolClient *spoolman.Client) *Observer {
 	return &Observer{
-		cfg:  cfg,
-		mqtt: mqttClient,
-		log:  log,
+		cfg:      cfg,
+		mqtt:     mqttClient,
+		log:      log,
+		spoolman: spoolClient,
 	}
 }
 
@@ -79,10 +83,10 @@ func (o *Observer) handleEvent(ctx context.Context, event printer.PrintEvent) {
 		return
 	}
 
-	o.logResult(log, result, meta, event)
+	o.logResult(ctx, log, result, meta, event)
 }
 
-func (o *Observer) logResult(log *slog.Logger, result *gcode.PrintFile, meta printer.ThreeMFInfo, event printer.PrintEvent) {
+func (o *Observer) logResult(ctx context.Context, log *slog.Logger, result *gcode.PrintFile, meta printer.ThreeMFInfo, event printer.PrintEvent) {
 	// For completed prints use all layers. For failed/cancelled prints only
 	// count layers that were actually extruded, using the last layer_num from MQTT.
 	var layerUsage gcode.FilamentUsage
@@ -141,6 +145,12 @@ func (o *Observer) logResult(log *slog.Logger, result *gcode.PrintFile, meta pri
 		args = append(args, "spoolman_id", spoolmanID)
 	}
 	log.Info("print parsed", args...)
+
+	if o.spoolman != nil && spoolmanID != 0 {
+		if err := o.spoolman.UseSpool(ctx, spoolmanID, total.WeightG); err != nil {
+			log.Error("spoolman update failed", "err", err)
+		}
+	}
 }
 
 func parseStatusString(s gcode.ParseStatus) string {
