@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -16,7 +17,14 @@ import (
 	"github.com/szymon3/bambu-middleman/webui"
 )
 
+var version = "dev"
+
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "--version" {
+		fmt.Println(version)
+		return
+	}
+
 	level := slog.LevelInfo
 	if os.Getenv("LOG_LEVEL") == "DEBUG" {
 		level = slog.LevelDebug
