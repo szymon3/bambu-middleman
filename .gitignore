@@ -5,7 +5,7 @@
 .env
 
 # Compiled binaries
-mqttdump
+/mqttdump
 
 # MQTT dump data
 *.jsonl
