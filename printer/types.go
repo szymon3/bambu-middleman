@@ -24,12 +24,13 @@ type MQTTReport struct {
 
 // PrintPayload holds the fields relevant to print status within an MQTT report message.
 type PrintPayload struct {
-	GCodeState  PrintState `json:"gcode_state"`
-	GCodeFile   string     `json:"gcode_file"`
-	SubtaskName string     `json:"subtask_name"`
-	Progress    int        `json:"mc_percent"`
-	LayerNum    int        `json:"layer_num"` // current layer, 1-indexed (layer 1 → 1); 0 means absent
-	SequenceID  string     `json:"sequence_id"`
+	GCodeState    PrintState `json:"gcode_state"`
+	GCodeFile     string     `json:"gcode_file"`
+	SubtaskName   string     `json:"subtask_name"`
+	Progress      int        `json:"mc_percent"`
+	LayerNum      int        `json:"layer_num"`      // current layer, 1-indexed (layer 1 → 1); 0 means absent
+	SequenceID    string     `json:"sequence_id"`
+	HWSwitchState *int       `json:"hw_switch_state"` // nil = absent; 0 = filament unloaded; 1 = filament loaded
 }
 
 // PrintEvent is emitted when a print reaches a terminal state.

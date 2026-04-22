@@ -22,17 +22,20 @@ type Observer struct {
 	log      *slog.Logger
 	spoolman *spoolman.Client // nil = disabled
 	audit    *auditlog.Logger // nil = disabled
+	sources  []string         // ordered list of spool ID sources ("api", "notes")
 }
 
 // NewObserver creates an Observer wired to the given MQTT client.
 // spoolClient and auditLogger may be nil to disable their respective integrations.
-func NewObserver(cfg printer.Config, mqttClient *printer.MQTTClient, log *slog.Logger, spoolClient *spoolman.Client, auditLogger *auditlog.Logger) *Observer {
+// sources is the ordered list of spool ID resolution sources (see SPOOLMAN_SOURCE).
+func NewObserver(cfg printer.Config, mqttClient *printer.MQTTClient, log *slog.Logger, spoolClient *spoolman.Client, auditLogger *auditlog.Logger, sources []string) *Observer {
 	return &Observer{
 		cfg:      cfg,
 		mqtt:     mqttClient,
 		log:      log,
 		spoolman: spoolClient,
 		audit:    auditLogger,
+		sources:  sources,
 	}
 }
 
@@ -48,6 +51,19 @@ func (o *Observer) Run(ctx context.Context) {
 				return
 			}
 			o.handleEvent(ctx, event)
+		case _, ok := <-o.mqtt.FilamentLoads():
+			if !ok {
+				return
+			}
+			if o.audit == nil {
+				o.log.Debug("filament load event received, audit disabled — skipping clear")
+				continue
+			}
+			if err := o.audit.ClearActiveSpool(ctx); err != nil {
+				o.log.Error("failed to clear active spool on filament load", "err", err)
+			} else {
+				o.log.Info("active spool cleared on filament load")
+			}
 		}
 	}
 }
@@ -120,15 +136,14 @@ func (o *Observer) logResult(ctx context.Context, log *slog.Logger, result *gcod
 
 	statusStr := parseStatusString(result.Status)
 
-	// Parse Spoolman spool ID from filament notes if present.
-	var spoolmanID int
-	if len(meta.FilamentNotes) > 0 && meta.FilamentNotes[0] != "" {
-		if id, ok := printer.ParseSpoolmanID(meta.FilamentNotes[0]); ok {
-			log.Debug("spoolman tag found in filament notes", "spoolman_id", id)
-			spoolmanID = id
-		} else {
-			log.Debug("no spoolman tag in filament notes")
-		}
+	var filamentNotes string
+	if len(meta.FilamentNotes) > 0 {
+		filamentNotes = meta.FilamentNotes[0]
+	}
+
+	spoolmanID := resolveSpoolID(ctx, o.sources, o.audit, filamentNotes, log)
+	if spoolmanID != 0 {
+		log.Debug("spool id resolved", "spoolman_id", spoolmanID)
 	}
 
 	args := []any{
@@ -173,10 +188,6 @@ func (o *Observer) logResult(ctx context.Context, log *slog.Logger, result *gcod
 			id := spoolmanID
 			spoolID = &id
 		}
-		var filamentNotes string
-		if len(meta.FilamentNotes) > 0 {
-			filamentNotes = meta.FilamentNotes[0]
-		}
 		o.audit.Log(auditlog.Entry{
 			PrinterIP:       o.cfg.PrinterIP,
 			PrinterSerial:   o.cfg.Serial,
@@ -199,6 +210,35 @@ func (o *Observer) logResult(ctx context.Context, log *slog.Logger, result *gcod
 			FilamentNotes:   filamentNotes,
 		})
 	}
+}
+
+// resolveSpoolID iterates sources in order and returns the first spool ID found.
+// Source "api" queries the active spool in the audit DB (skipped if audit is nil).
+// Source "notes" parses the spoolman tag from filamentNotes.
+// Returns (0, false) if no source yields a match.
+func resolveSpoolID(ctx context.Context, sources []string, audit *auditlog.Logger, filamentNotes string, log *slog.Logger) int {
+	for _, source := range sources {
+		switch source {
+		case "api":
+			if audit == nil {
+				log.Debug("spoolman source 'api' skipped — audit not configured")
+				continue
+			}
+			id, _, ok, err := audit.GetActiveSpool(ctx)
+			if err != nil {
+				log.Warn("failed to query active spool", "err", err)
+				continue
+			}
+			if ok {
+				return id
+			}
+		case "notes":
+			if id, ok := printer.ParseSpoolmanID(filamentNotes); ok {
+				return id
+			}
+		}
+	}
+	return 0
 }
 
 func parseStatusString(s gcode.ParseStatus) string {

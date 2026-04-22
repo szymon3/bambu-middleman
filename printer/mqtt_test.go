@@ -21,8 +21,31 @@ func (m *mockMQTTMessage) Ack()              {}
 
 func newTestClient() *MQTTClient {
 	return &MQTTClient{
-		log:    slog.Default(),
-		events: make(chan PrintEvent, eventBufferSize),
+		log:               slog.Default(),
+		events:            make(chan PrintEvent, eventBufferSize),
+		filamentLoads:     make(chan struct{}, eventBufferSize),
+		lastHWSwitchState: -1,
+	}
+}
+
+func expectFilamentLoad(t *testing.T, c *MQTTClient) {
+	t.Helper()
+	select {
+	case _, ok := <-c.filamentLoads:
+		if !ok {
+			t.Fatal("filamentLoads channel closed unexpectedly")
+		}
+	default:
+		t.Fatal("expected a filament load event but channel was empty")
+	}
+}
+
+func expectNoFilamentLoad(t *testing.T, c *MQTTClient) {
+	t.Helper()
+	select {
+	case <-c.filamentLoads:
+		t.Fatal("expected no filament load event but got one")
+	default:
 	}
 }
 
@@ -250,6 +273,60 @@ func TestGCodeFileTracking(t *testing.T) {
 		if ev.GCodeFile != "fail.gcode" {
 			t.Errorf("GCodeFile = %q, want %q", ev.GCodeFile, "fail.gcode")
 		}
+	})
+}
+
+func TestHWSwitchState(t *testing.T) {
+	t.Run("0→1 emits filament load", func(t *testing.T) {
+		c := newTestClient()
+		sendMessage(c, `{"print":{"hw_switch_state":0}}`) // establishes baseline at 0
+		expectNoFilamentLoad(t, c)
+		sendMessage(c, `{"print":{"hw_switch_state":1}}`) // 0→1 transition
+		expectFilamentLoad(t, c)
+	})
+
+	t.Run("1→1 does not emit", func(t *testing.T) {
+		c := newTestClient()
+		sendMessage(c, `{"print":{"hw_switch_state":1}}`) // baseline at 1 (from -1 sentinel)
+		expectNoFilamentLoad(t, c)
+		sendMessage(c, `{"print":{"hw_switch_state":1}}`) // 1→1, no transition
+		expectNoFilamentLoad(t, c)
+	})
+
+	t.Run("absent field does not affect state or emit", func(t *testing.T) {
+		c := newTestClient()
+		sendMessage(c, `{"print":{"hw_switch_state":0}}`) // baseline 0
+		expectNoFilamentLoad(t, c)
+		sendMessage(c, `{"print":{"gcode_state":"RUNNING","gcode_file":"f.gcode"}}`) // no hw_switch_state
+		expectNoFilamentLoad(t, c)
+		sendMessage(c, `{"print":{"hw_switch_state":1}}`) // 0→1: should still emit
+		expectFilamentLoad(t, c)
+	})
+
+	t.Run("sentinel: first hw_switch_state=1 (from -1) does not emit", func(t *testing.T) {
+		c := newTestClient()
+		// On observer restart, printer sends hw_switch_state:1 in first full dump.
+		// lastHWSwitchState starts at -1 (sentinel), so this is -1→1, not 0→1.
+		sendMessage(c, `{"print":{"hw_switch_state":1}}`)
+		expectNoFilamentLoad(t, c)
+	})
+
+	t.Run("sentinel: first 0 then 1 does emit", func(t *testing.T) {
+		c := newTestClient()
+		sendMessage(c, `{"print":{"hw_switch_state":0}}`) // -1→0, sets baseline
+		expectNoFilamentLoad(t, c)
+		sendMessage(c, `{"print":{"hw_switch_state":1}}`) // 0→1
+		expectFilamentLoad(t, c)
+	})
+
+	t.Run("1→0→1 emits once on second 0→1", func(t *testing.T) {
+		c := newTestClient()
+		sendMessage(c, `{"print":{"hw_switch_state":1}}`) // sentinel, no emit
+		expectNoFilamentLoad(t, c)
+		sendMessage(c, `{"print":{"hw_switch_state":0}}`) // 1→0, no emit
+		expectNoFilamentLoad(t, c)
+		sendMessage(c, `{"print":{"hw_switch_state":1}}`) // 0→1, emit
+		expectFilamentLoad(t, c)
 	})
 }
 

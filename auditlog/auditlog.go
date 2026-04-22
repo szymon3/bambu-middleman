@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/szymon3/bambu-middleman/gcode"
 	"github.com/szymon3/bambu-middleman/printer"
@@ -173,6 +174,38 @@ func statusString(s gcode.ParseStatus) string {
 	default:
 		return "FAILED"
 	}
+}
+
+// SetActiveSpool upserts the singleton active-spool row. Uses l.db directly
+// (synchronous) rather than the async write channel.
+func (l *Logger) SetActiveSpool(ctx context.Context, spoolID int) error {
+	_, err := l.db.ExecContext(ctx,
+		`INSERT OR REPLACE INTO active_spool (id, spool_id) VALUES (1, ?)`,
+		spoolID)
+	return err
+}
+
+// GetActiveSpool returns the currently active spool ID and its activation
+// timestamp. ok is false when no spool is active.
+func (l *Logger) GetActiveSpool(ctx context.Context) (spoolID int, activatedAt time.Time, ok bool, err error) {
+	var ts string
+	row := l.db.QueryRowContext(ctx, `SELECT spool_id, activated_at FROM active_spool WHERE id = 1`)
+	if scanErr := row.Scan(&spoolID, &ts); scanErr == sql.ErrNoRows {
+		return 0, time.Time{}, false, nil
+	} else if scanErr != nil {
+		return 0, time.Time{}, false, scanErr
+	}
+	activatedAt, err = time.Parse("2006-01-02T15:04:05.000Z", ts)
+	if err != nil {
+		return 0, time.Time{}, false, fmt.Errorf("parse activated_at %q: %w", ts, err)
+	}
+	return spoolID, activatedAt, true, nil
+}
+
+// ClearActiveSpool removes the active spool row, making no spool active.
+func (l *Logger) ClearActiveSpool(ctx context.Context) error {
+	_, err := l.db.ExecContext(ctx, `DELETE FROM active_spool WHERE id = 1`)
+	return err
 }
 
 const insertSQL = `INSERT INTO print_audit_log (
