@@ -32,6 +32,12 @@ Core parsing is stable. Active spool tracking via built-in HTTP server is stable
 
 ---
 
+## Releases
+
+Pre-built `observer` binaries for `linux/amd64` and `linux/arm64` are attached to each [GitHub Release](https://github.com/szymon3/bambu-middleman/releases) along with a `sha256sums.txt` checksum file. `mqttdump` is a developer diagnostic tool and is not included in release assets.
+
+---
+
 ## Running the tools
 
 Two binaries live under `cmd/`. Both are configured entirely via environment variables and shut down gracefully on SIGINT/SIGTERM.

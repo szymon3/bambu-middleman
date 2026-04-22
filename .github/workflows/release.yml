@@ -1,0 +1,138 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+concurrency:
+  group: release-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    # Gate 1: CI succeeded, triggering event was a push, ref looks tag-shaped.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      startsWith(github.event.workflow_run.head_branch, 'v')
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      prerelease: ${{ steps.tag.outputs.prerelease }}
+    steps:
+      # Gate 2: confirm via API that head_branch is actually a tag ref
+      # (defends against a hypothetical branch named `v*`).
+      - name: Verify ref is a tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.workflow_run.head_branch }}
+        run: gh api "repos/${{ github.repository }}/git/refs/tags/$TAG" > /dev/null
+
+      - id: tag
+        env:
+          TAG: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [[ "$TAG" == *-* ]]; then
+            echo "prerelease=true"  >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: verify
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      id-token: write      # for attest-build-provenance OIDC
+      attestations: write  # for attest-build-provenance
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-${{ runner.arch }}-go-${{ hashFiles('go.sum') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-go-
+
+      - name: Build
+        env:
+          CGO_ENABLED: '0'
+          GOOS: linux
+          GOARCH: ${{ matrix.arch }}
+          VERSION: ${{ needs.verify.outputs.tag }}
+        run: |
+          go build \
+            -trimpath \
+            -ldflags "-s -w -X main.version=${VERSION}" \
+            -o "bambu-observer_linux_${GOARCH}" \
+            ./cmd/observer
+
+      - name: Smoke test
+        run: |
+          out=$(./bambu-observer_linux_${{ matrix.arch }} --version)
+          echo "version output: $out"
+          test "$out" = "${{ needs.verify.outputs.tag }}"
+
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be  # v2
+        with:
+          subject-path: bambu-observer_linux_${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: bambu-observer_linux_${{ matrix.arch }}
+          path: bambu-observer_linux_${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    needs: [verify, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        with:
+          pattern: bambu-observer_linux_*
+          merge-multiple: true
+
+      - name: Checksums
+        run: sha256sum bambu-observer_linux_amd64 bambu-observer_linux_arm64 > sha256sums.txt
+
+      - name: Create or update release
+        env:
+          GH_TOKEN:   ${{ secrets.GITHUB_TOKEN }}
+          TAG:        ${{ needs.verify.outputs.tag }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          ASSETS=(bambu-observer_linux_amd64 bambu-observer_linux_arm64 sha256sums.txt)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber
+          else
+            PRE=()
+            [[ "$PRERELEASE" == "true" ]] && PRE=(--prerelease)
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --generate-notes \
+              "${PRE[@]}" \
+              "${ASSETS[@]}"
+          fi
