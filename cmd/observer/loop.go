@@ -116,7 +116,7 @@ func (o *Observer) logResult(ctx context.Context, log *slog.Logger, result *gcod
 		layersPrinted = len(result.Layers)
 	}
 
-	total := addUsage(result.StartupUsage, layerUsage)
+	total := gcode.AddUsage(result.StartupUsage, layerUsage)
 
 	statusStr := parseStatusString(result.Status)
 
@@ -216,10 +216,3 @@ func round2(f float64) float64 {
 	return math.Round(f*100) / 100
 }
 
-func addUsage(a, b gcode.FilamentUsage) gcode.FilamentUsage {
-	return gcode.FilamentUsage{
-		LengthMM:  a.LengthMM + b.LengthMM,
-		VolumeCM3: a.VolumeCM3 + b.VolumeCM3,
-		WeightG:   a.WeightG + b.WeightG,
-	}
-}
