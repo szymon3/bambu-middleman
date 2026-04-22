@@ -27,8 +27,8 @@ func TestUseSpool_CorrectRequest(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if gotMethod != http.MethodPatch {
-		t.Errorf("method = %q, want PATCH", gotMethod)
+	if gotMethod != http.MethodPut {
+		t.Errorf("method = %q, want PUT", gotMethod)
 	}
 	if gotPath != "/api/v1/spool/42/use" {
 		t.Errorf("path = %q, want /api/v1/spool/42/use", gotPath)

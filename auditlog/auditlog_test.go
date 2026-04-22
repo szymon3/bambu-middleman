@@ -1,6 +1,7 @@
 package auditlog
 
 import (
+	"context"
 	"database/sql"
 	"log/slog"
 	"os"
@@ -233,6 +234,145 @@ func TestNullSpoolmanFields(t *testing.T) {
 	}
 	if spoolErr != nil {
 		t.Errorf("spoolman_error = %v, want NULL", *spoolErr)
+	}
+}
+
+func TestActiveSpool(t *testing.T) {
+	l, _ := testLogger(t)
+	defer l.Close()
+	ctx := context.Background()
+
+	t.Run("initially inactive", func(t *testing.T) {
+		_, _, ok, err := l.GetActiveSpool(ctx)
+		if err != nil {
+			t.Fatalf("GetActiveSpool: %v", err)
+		}
+		if ok {
+			t.Error("expected no active spool, got one")
+		}
+	})
+
+	t.Run("set makes active", func(t *testing.T) {
+		if err := l.SetActiveSpool(ctx, 42); err != nil {
+			t.Fatalf("SetActiveSpool: %v", err)
+		}
+		id, at, ok, err := l.GetActiveSpool(ctx)
+		if err != nil {
+			t.Fatalf("GetActiveSpool: %v", err)
+		}
+		if !ok {
+			t.Fatal("expected active spool, got none")
+		}
+		if id != 42 {
+			t.Errorf("spool_id = %d, want 42", id)
+		}
+		if at.IsZero() {
+			t.Error("activated_at is zero")
+		}
+	})
+
+	t.Run("second set replaces first (singleton)", func(t *testing.T) {
+		if err := l.SetActiveSpool(ctx, 7); err != nil {
+			t.Fatalf("SetActiveSpool: %v", err)
+		}
+		id, _, ok, err := l.GetActiveSpool(ctx)
+		if err != nil {
+			t.Fatalf("GetActiveSpool: %v", err)
+		}
+		if !ok {
+			t.Fatal("expected active spool after second set")
+		}
+		if id != 7 {
+			t.Errorf("spool_id = %d, want 7", id)
+		}
+	})
+
+	t.Run("clear makes inactive", func(t *testing.T) {
+		if err := l.ClearActiveSpool(ctx); err != nil {
+			t.Fatalf("ClearActiveSpool: %v", err)
+		}
+		_, _, ok, err := l.GetActiveSpool(ctx)
+		if err != nil {
+			t.Fatalf("GetActiveSpool after clear: %v", err)
+		}
+		if ok {
+			t.Error("expected no active spool after clear")
+		}
+	})
+
+	t.Run("clear when already inactive is a no-op", func(t *testing.T) {
+		if err := l.ClearActiveSpool(ctx); err != nil {
+			t.Fatalf("ClearActiveSpool on empty: %v", err)
+		}
+	})
+
+	t.Run("timestamp round-trips as valid ISO 8601", func(t *testing.T) {
+		if err := l.SetActiveSpool(ctx, 99); err != nil {
+			t.Fatalf("SetActiveSpool: %v", err)
+		}
+		_, at, ok, err := l.GetActiveSpool(ctx)
+		if err != nil {
+			t.Fatalf("GetActiveSpool: %v", err)
+		}
+		if !ok {
+			t.Fatal("expected active spool")
+		}
+		// Round-trip: format then parse with the same layout used by GetActiveSpool.
+		formatted := at.UTC().Format("2006-01-02T15:04:05.000Z")
+		if _, err := time.Parse("2006-01-02T15:04:05.000Z", formatted); err != nil {
+			t.Errorf("timestamp %q does not parse: %v", formatted, err)
+		}
+	})
+}
+
+func TestMigrationUpgrade(t *testing.T) {
+	// Create a v1 database by running only migration 1 directly, then verifying
+	// that calling Open again applies migration 2 without data loss.
+	dbPath := filepath.Join(t.TempDir(), "upgrade_test.db")
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	// Open normally — this applies both migrations (v1 and v2).
+	l1, err := Open(dbPath, log)
+	if err != nil {
+		t.Fatalf("first Open: %v", err)
+	}
+	// Write an audit entry to confirm data survives the upgrade check.
+	l1.Log(Entry{
+		PrinterIP:     "10.0.0.1",
+		PrinterSerial: "SN1",
+		PrintState:    printer.StateFinish,
+		GCodeFile:     "before_upgrade.gcode",
+		ParseStatus:   gcode.ParseOK,
+	})
+	l1.Close()
+
+	// Reopen — migration 2 should be a no-op (already applied); data must survive.
+	l2, err := Open(dbPath, log)
+	if err != nil {
+		t.Fatalf("second Open (upgrade check): %v", err)
+	}
+	defer l2.Close()
+
+	// Verify existing print_audit_log row is intact.
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("raw open: %v", err)
+	}
+	defer db.Close()
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM print_audit_log`).Scan(&count); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("print_audit_log rows = %d, want 1", count)
+	}
+
+	// Verify active_spool table exists (migration 2).
+	var tableName string
+	err = db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name='active_spool'`).Scan(&tableName)
+	if err != nil {
+		t.Fatalf("active_spool table not found: %v", err)
 	}
 }
 

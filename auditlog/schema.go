@@ -6,12 +6,12 @@ import (
 	"fmt"
 )
 
-const schemaVersion = 1
+const schemaVersion = 2
 
 // Each entry is executed as a single transaction when upgrading from the
 // previous version. Append new entries for future schema changes.
 var migrations = []string{
-	// Version 1: initial audit log table.
+	// Version 1: initial audit log table and indexes.
 	`CREATE TABLE IF NOT EXISTS print_audit_log (
 	id              INTEGER PRIMARY KEY AUTOINCREMENT,
 	created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
@@ -45,6 +45,14 @@ var migrations = []string{
 CREATE INDEX IF NOT EXISTS idx_pal_created_at ON print_audit_log(created_at);
 CREATE INDEX IF NOT EXISTS idx_pal_spoolman   ON print_audit_log(spoolman_spool_id);
 CREATE INDEX IF NOT EXISTS idx_pal_serial     ON print_audit_log(printer_serial);`,
+
+	// Version 2: active spool singleton table.
+	// CHECK (id = 1) + INSERT OR REPLACE enforces a single row.
+	`CREATE TABLE IF NOT EXISTS active_spool (
+	id           INTEGER PRIMARY KEY CHECK (id = 1),
+	spool_id     INTEGER NOT NULL,
+	activated_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);`,
 }
 
 // migrate applies pending schema migrations inside transactions.

@@ -23,17 +23,19 @@ const (
 // MQTTClient connects to the printer's local MQTT broker and emits PrintEvents
 // for terminal print states (FINISH, FAILED).
 type MQTTClient struct {
-	cfg    Config
-	log    *slog.Logger
-	events chan PrintEvent
+	cfg           Config
+	log           *slog.Logger
+	events        chan PrintEvent
+	filamentLoads chan struct{}
 
 	// mu protects the print lifecycle state below. paho may invoke the message
 	// handler from multiple goroutines.
-	mu              sync.Mutex
-	printActive     bool   // true after PREPARE/RUNNING, reset on terminal event
-	lastGCodeFile   string // captured from any non-empty gcode_file in flight
-	lastSubtaskName string // captured from any non-empty subtask_name in flight
-	lastLayerNum    int    // last layer_num received (1-indexed); 0 means unknown
+	mu                sync.Mutex
+	printActive       bool   // true after PREPARE/RUNNING, reset on terminal event
+	lastGCodeFile     string // captured from any non-empty gcode_file in flight
+	lastSubtaskName   string // captured from any non-empty subtask_name in flight
+	lastLayerNum      int    // last layer_num received (1-indexed); 0 means unknown
+	lastHWSwitchState int    // -1 = sentinel (never observed); 0 = unloaded; 1 = loaded
 }
 
 // NewMQTTClientOptions returns a base *mqtt.ClientOptions configured with the
@@ -57,9 +59,11 @@ func NewMQTTClientOptions(cfg Config) *mqtt.ClientOptions {
 // NewMQTTClient creates a new MQTTClient. Call Run to start the connection loop.
 func NewMQTTClient(cfg Config, log *slog.Logger) *MQTTClient {
 	return &MQTTClient{
-		cfg:    cfg,
-		log:    log,
-		events: make(chan PrintEvent, eventBufferSize),
+		cfg:               cfg,
+		log:               log,
+		events:            make(chan PrintEvent, eventBufferSize),
+		filamentLoads:     make(chan struct{}, eventBufferSize),
+		lastHWSwitchState: -1, // sentinel: first observed value establishes baseline without firing
 	}
 }
 
@@ -69,10 +73,19 @@ func (c *MQTTClient) Events() <-chan PrintEvent {
 	return c.events
 }
 
+// FilamentLoads returns a read-only channel that receives a value whenever
+// filament transitions from unloaded (hw_switch_state=0) to loaded (hw_switch_state=1).
+// Only transitions from 0→1 emit; the initial observed value establishes a baseline
+// without firing (prevents false events on observer restart).
+func (c *MQTTClient) FilamentLoads() <-chan struct{} {
+	return c.filamentLoads
+}
+
 // Run starts the connection loop. It connects to the printer MQTT broker, subscribes
 // to the report topic, and reconnects with exponential backoff on disconnection.
-// Blocks until ctx is cancelled; closes the Events channel on return.
+// Blocks until ctx is cancelled; closes the Events and FilamentLoads channels on return.
 func (c *MQTTClient) Run(ctx context.Context) {
+	defer close(c.filamentLoads)
 	defer close(c.events)
 
 	attempt := 0
@@ -193,6 +206,20 @@ func (c *MQTTClient) handleMessage(_ mqtt.Client, msg mqtt.Message) {
 	if p.LayerNum > 0 && c.printActive {
 		c.lastLayerNum = p.LayerNum
 		c.log.Debug("layer_num update", "layer_num", p.LayerNum)
+	}
+
+	// Track hw_switch_state for filament load detection.
+	// Only a 0→1 transition emits to filamentLoads; the initial observed value
+	// (from -1 sentinel) establishes baseline without firing.
+	if p.HWSwitchState != nil {
+		if *p.HWSwitchState == 1 && c.lastHWSwitchState == 0 {
+			select {
+			case c.filamentLoads <- struct{}{}:
+			default:
+				c.log.Warn("filament load channel full, dropping event")
+			}
+		}
+		c.lastHWSwitchState = *p.HWSwitchState
 	}
 
 	if p.GCodeState == "" {
