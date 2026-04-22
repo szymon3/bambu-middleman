@@ -124,15 +124,17 @@ jobs:
           PRERELEASE: ${{ needs.verify.outputs.prerelease }}
         run: |
           set -euo pipefail
+          REPO="${{ github.repository }}"
           ASSETS=(bambu-observer_linux_amd64 bambu-observer_linux_arm64 sha256sums.txt)
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "${ASSETS[@]}" --clobber
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber --repo "$REPO"
           else
             PRE=()
             [[ "$PRERELEASE" == "true" ]] && PRE=(--prerelease)
             gh release create "$TAG" \
               --title "$TAG" \
               --generate-notes \
+              --repo "$REPO" \
               "${PRE[@]}" \
               "${ASSETS[@]}"
           fi
