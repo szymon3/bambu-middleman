@@ -44,7 +44,7 @@ func (p *PrintFile) ComputedUsage(upToLayer int) (FilamentUsage, error) {
 	}
 	var total FilamentUsage
 	for i := 0; i < end; i++ {
-		total = addUsage(total, p.Layers[i].Usage)
+		total = AddUsage(total, p.Layers[i].Usage)
 	}
 	return total, nil
 }
@@ -53,10 +53,11 @@ func (p *PrintFile) ComputedUsage(upToLayer int) (FilamentUsage, error) {
 // StartupUsage plus all layer usage.
 func (p *PrintFile) TotalUsage() FilamentUsage {
 	layerTotal, _ := p.ComputedUsage(0)
-	return addUsage(p.StartupUsage, layerTotal)
+	return AddUsage(p.StartupUsage, layerTotal)
 }
 
-func addUsage(a, b FilamentUsage) FilamentUsage {
+// AddUsage returns the element-wise sum of two FilamentUsage values.
+func AddUsage(a, b FilamentUsage) FilamentUsage {
 	return FilamentUsage{
 		LengthMM:  a.LengthMM + b.LengthMM,
 		VolumeCM3: a.VolumeCM3 + b.VolumeCM3,
