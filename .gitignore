@@ -9,3 +9,8 @@
 
 # MQTT dump data
 *.jsonl
+
+# SQLite audit database
+*.db
+*.db-shm
+*.db-wal
