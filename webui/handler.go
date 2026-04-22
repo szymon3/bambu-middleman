@@ -12,6 +12,30 @@ import (
 	"github.com/szymon3/bambu-middleman/auditlog"
 )
 
+const htmlBoilerplate = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>bambu-middleman</title>
+  <style>
+    body   { font-family: sans-serif; max-width: 420px; margin: 3rem auto; padding: 0 1.5rem; text-align: center; }
+    h1     { font-size: 1.3rem; margin-bottom: 1.5rem; }
+    p      { color: #555; margin-bottom: 1.5rem; }
+    button { font-size: 1.1rem; padding: 0.8rem 0; width: 100%%; cursor: pointer; }
+  </style>
+</head>
+<body>
+%s
+</body>
+</html>`
+
+// htmlPage writes a complete HTML response using the shared boilerplate skeleton.
+func htmlPage(w http.ResponseWriter, content string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, htmlBoilerplate, content)
+}
+
 // New returns an http.Handler implementing all active-spool endpoints.
 // audit must be non-nil. baseURL is the externally reachable base URL
 // (no trailing slash); it is only required at request time for the /qr endpoint.
@@ -60,14 +84,10 @@ func (h *handler) getActivate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid spool id", http.StatusBadRequest)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintf(w, `<!DOCTYPE html>
-<html><body>
-<h1>Activate spool #%d?</h1>
+	htmlPage(w, fmt.Sprintf(`<h1>Activate spool #%d?</h1>
 <form method="POST" action="/spool/%d/activate">
   <button type="submit">Activate</button>
-</form>
-</body></html>`, id, id)
+</form>`, id, id))
 }
 
 // POST /spool/{id}/activate — set active spool
@@ -81,11 +101,7 @@ func (h *handler) postActivate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintf(w, `<!DOCTYPE html>
-<html><body>
-<h1>Spool #%d is now active</h1>
-</body></html>`, id)
+	htmlPage(w, fmt.Sprintf(`<h1>Spool #%d is now active.</h1>`, id))
 }
 
 // GET /spool/{id}/qr — QR code PNG for the activate URL
@@ -138,23 +154,16 @@ func (h *handler) getClear(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if !ok {
-		fmt.Fprintf(w, `<!DOCTYPE html>
-<html><body>
-<h1>No spool is currently active</h1>
-</body></html>`)
+		htmlPage(w, `<h1>No spool is currently active.</h1>`)
 		return
 	}
 	ts := activatedAt.UTC().Format("2006-01-02T15:04:05.000Z")
-	fmt.Fprintf(w, `<!DOCTYPE html>
-<html><body>
-<h1>Clear active spool?</h1>
-<p>Currently: spool #%d (activated %s)</p>
+	htmlPage(w, fmt.Sprintf(`<h1>Clear active spool?</h1>
+<p>Currently active: spool #%d (activated %s)</p>
 <form method="POST" action="/spool/clear">
   <button type="submit">Clear</button>
-</form>
-</body></html>`, spoolID, ts)
+</form>`, spoolID, ts))
 }
 
 // POST /spool/clear — clear active spool
@@ -163,9 +172,5 @@ func (h *handler) postClear(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintf(w, `<!DOCTYPE html>
-<html><body>
-<h1>Active spool cleared</h1>
-</body></html>`)
+	htmlPage(w, `<h1>Active spool cleared.</h1>`)
 }
