@@ -28,7 +28,7 @@ Parse a file and read the results from the returned `*PrintFile`. Check `pf.Stat
 
 ## Project status
 
-Core parsing is stable. HTTP middleware, webhook triggers, and Bambu printer API integration are planned for future milestones.
+Core parsing is stable. Active spool tracking via built-in HTTP server is stable. Webhook triggers and further Bambu printer API integration are planned for future milestones.
 
 ---
 
@@ -169,3 +169,18 @@ The tag is case-insensitive and can appear anywhere in the notes alongside other
 ```
 Bought 2025-01. SPOOLMAN#42 leftover spool.
 ```
+
+### HTTP endpoints reference
+
+| Method | Path | Response | Notes |
+|--------|------|----------|-------|
+| `GET` | `/spool/active` | `application/json` | `{"spool_id": 42, "activated_at": "2026-04-22T20:31:00.000Z"}` or `{"spool_id": null}` when none set |
+| `GET` | `/spool/{id}/activate` | `text/html` | Confirmation page — safe to embed in NFC/QR |
+| `POST` | `/spool/{id}/activate` | `text/html` | Sets spool `id` as active; submitted by the confirmation form |
+| `GET` | `/spool/clear` | `text/html` | Confirmation page showing current active spool |
+| `POST` | `/spool/clear` | `text/html` | Clears the active spool; submitted by the confirmation form |
+| `GET` | `/spool/{id}/qr` | `image/png` | QR code encoding `WEBUI_BASE_URL/spool/{id}/activate`; cached 24 h |
+
+Valid spool IDs are integers in the range 1–999999. Requests outside that range return `400 Bad Request`.
+
+The activate and clear flows use a GET → POST two-step deliberately. NFC tags and QR codes can only trigger GET requests (that is all a phone browser does when it reads them), so the GET endpoints serve confirmation pages rather than performing the action directly. The actual state change happens on the subsequent POST submitted by the HTML form. This also prevents accidental activations from an unintentional tap.
