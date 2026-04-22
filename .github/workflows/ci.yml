@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: vet
+        run: go vet ./...
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+  test:
+    name: Test (${{ matrix.package }} / ${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        package:
+          - ./gcode/...
+          - ./printer/...
+          - ./spoolman/...
+          - ./auditlog/...
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-${{ runner.arch }}-go-${{ hashFiles('go.sum') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-go-
+
+      - name: test
+        run: go test -race -count=1 -timeout 30s ${{ matrix.package }}
+
+  build:
+    name: Build (${{ matrix.binary }} / ${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        binary: [observer, mqttdump]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-${{ runner.arch }}-go-${{ hashFiles('go.sum') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-go-
+
+      - name: build
+        run: go build -o /dev/null ./cmd/${{ matrix.binary }}
+
+  ci-pass:
+    name: CI Pass
+    needs: [lint, test, build]
+    runs-on: ubuntu-24.04
+    if: always()
+    steps:
+      - name: check all jobs passed
+        run: |
+          if [[ "${{ needs.lint.result }}"  != "success" || \
+                "${{ needs.test.result }}"  != "success" || \
+                "${{ needs.build.result }}" != "success" ]]; then
+            echo "lint:  ${{ needs.lint.result }}"
+            echo "test:  ${{ needs.test.result }}"
+            echo "build: ${{ needs.build.result }}"
+            exit 1
+          fi
