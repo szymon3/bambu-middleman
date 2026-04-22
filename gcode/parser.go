@@ -155,12 +155,6 @@ func parse(r io.Reader, opts options) (*PrintFile, error) {
 			continue
 		}
 
-		// Reject unsupported real tool changes (T1–T9). Bambu-specific
-		// multi-digit preset codes like T1000 / T255 are intentionally ignored.
-		if tok, bad := unsupportedToolChange(line); bad {
-			return nil, fmt.Errorf("gcode: multi-filament file not supported (tool change %s)", tok)
-		}
-
 		switch state {
 		case stateHeader:
 			parseHeaderLine(line, &pf.Metadata)
@@ -171,6 +165,12 @@ func parse(r io.Reader, opts options) (*PrintFile, error) {
 			}
 
 		case stateStartup, stateLayer:
+			// Reject unsupported real tool changes (T1–T9). Bambu-specific
+			// multi-digit preset codes like T1000 / T255 are intentionally ignored.
+			// Checked here before comment stripping because T-codes have no inline comments.
+			if tok, bad := unsupportedToolChange(line); bad {
+				return nil, fmt.Errorf("gcode: multi-filament file not supported (tool change %s)", tok)
+			}
 			// Layer marker transition — checked on raw line (it is a comment).
 			if m := reLayerMarker.FindStringSubmatch(line); m != nil {
 				layerNum, _ := strconv.Atoi(m[1])
