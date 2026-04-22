@@ -8,9 +8,9 @@ import (
 // Config holds the connection parameters for a single Bambu Lab P1S printer.
 // All fields are required and loaded from environment variables.
 type Config struct {
-	PrinterIP   string // local IP address of the printer
-	Serial      string // printer serial number (used in MQTT topic)
-	AccessCode  string // 8-digit access code shown on printer screen
+	PrinterIP  string // local IP address of the printer
+	Serial     string // printer serial number (used in MQTT topic)
+	AccessCode string // 8-digit access code shown on printer screen
 }
 
 // LoadFromEnv reads printer configuration from environment variables.

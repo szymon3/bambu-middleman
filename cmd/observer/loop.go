@@ -19,8 +19,8 @@ type Observer struct {
 	cfg      printer.Config
 	mqtt     *printer.MQTTClient
 	log      *slog.Logger
-	spoolman *spoolman.Client  // nil = disabled
-	audit    *auditlog.Logger  // nil = disabled
+	spoolman *spoolman.Client // nil = disabled
+	audit    *auditlog.Logger // nil = disabled
 }
 
 // NewObserver creates an Observer wired to the given MQTT client.
