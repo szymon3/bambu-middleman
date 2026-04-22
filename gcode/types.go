@@ -11,11 +11,6 @@ type ParseStatus int
 const (
 	ParseOK      ParseStatus = iota // all sections parsed successfully
 	ParsePartial                    // file parsed but some sections missing or malformed
-	// ParseFailed is reserved/defensive. The parser currently returns
-	// (nil, error) instead of a *PrintFile with this status; it exists for
-	// forward compatibility with callers that may receive a partially
-	// constructed result from future error paths.
-	ParseFailed
 )
 
 // PrintFile holds all data extracted from a parsed gcode file.
