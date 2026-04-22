@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"strings"
 
 	"github.com/szymon3/bambu-middleman/auditlog"
@@ -212,7 +213,7 @@ func parseStatusString(s gcode.ParseStatus) string {
 }
 
 func round2(f float64) float64 {
-	return float64(int(f*100+0.5)) / 100
+	return math.Round(f*100) / 100
 }
 
 func addUsage(a, b gcode.FilamentUsage) gcode.FilamentUsage {
