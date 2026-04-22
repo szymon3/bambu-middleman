@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -41,17 +40,8 @@ func main() {
 	var count int
 	connLost := make(chan struct{}, 1)
 
-	opts := mqtt.NewClientOptions().
-		AddBroker(fmt.Sprintf("tls://%s", cfg.MQTTBrokerAddr())).
+	opts := printer.NewMQTTClientOptions(cfg).
 		SetClientID("bambu-mqttdump").
-		SetUsername("bblp").
-		SetPassword(cfg.AccessCode).
-		SetKeepAlive(30 * time.Second).
-		SetConnectTimeout(10 * time.Second).
-		SetAutoReconnect(false).
-		SetTLSConfig(&tls.Config{
-			InsecureSkipVerify: true, //nolint:gosec // printer uses a self-signed certificate
-		}).
 		SetConnectionLostHandler(func(_ mqtt.Client, err error) {
 			fmt.Fprintf(os.Stderr, "Connection lost: %v\n", err)
 			select {
