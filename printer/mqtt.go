@@ -36,6 +36,24 @@ type MQTTClient struct {
 	lastLayerNum    int    // last layer_num received (1-indexed); 0 means unknown
 }
 
+// NewMQTTClientOptions returns a base *mqtt.ClientOptions configured with the
+// shared settings (broker, credentials, TLS, keepalive, timeouts, no
+// auto-reconnect). Callers should chain SetClientID and
+// SetConnectionLostHandler before constructing the client.
+func NewMQTTClientOptions(cfg Config) *mqtt.ClientOptions {
+	return mqtt.NewClientOptions().
+		AddBroker(fmt.Sprintf("tls://%s", cfg.MQTTBrokerAddr())).
+		SetClientID("bambu-middleman").
+		SetUsername("bblp").
+		SetPassword(cfg.AccessCode).
+		SetKeepAlive(keepAlive).
+		SetConnectTimeout(connectTimeout).
+		SetAutoReconnect(false). // callers manage reconnect themselves
+		SetTLSConfig(&tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec // printer uses a self-signed certificate
+		})
+}
+
 // NewMQTTClient creates a new MQTTClient. Call Run to start the connection loop.
 func NewMQTTClient(cfg Config, log *slog.Logger) *MQTTClient {
 	return &MQTTClient{
@@ -110,17 +128,7 @@ func (c *MQTTClient) connect(ctx context.Context) (bool, error) {
 
 	connLost := make(chan error, 1)
 
-	opts := mqtt.NewClientOptions().
-		AddBroker(fmt.Sprintf("tls://%s", c.cfg.MQTTBrokerAddr())).
-		SetClientID("bambu-middleman").
-		SetUsername("bblp").
-		SetPassword(c.cfg.AccessCode).
-		SetKeepAlive(keepAlive).
-		SetConnectTimeout(connectTimeout).
-		SetAutoReconnect(false). // we manage reconnect ourselves
-		SetTLSConfig(&tls.Config{
-			InsecureSkipVerify: true, //nolint:gosec // printer uses a self-signed certificate
-		}).
+	opts := NewMQTTClientOptions(c.cfg).
 		SetConnectionLostHandler(func(_ mqtt.Client, err error) {
 			c.log.Warn("mqtt connection lost", "err", err)
 			select {
