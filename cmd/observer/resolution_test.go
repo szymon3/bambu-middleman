@@ -92,10 +92,10 @@ func TestParseSpoolmanSources(t *testing.T) {
 		{"notes,api", []string{"notes", "api"}},
 		{"api", []string{"api"}},
 		{"notes", []string{"notes"}},
-		{"INVALID", []string{"api", "notes"}},             // all invalid → default
-		{"api,invalid,notes", []string{"api", "notes"}},   // filter invalid
-		{" api , notes ", []string{"api", "notes"}},       // trim spaces
-		{"API,NOTES", []string{"api", "notes"}},           // case-insensitive
+		{"INVALID", []string{"api", "notes"}},           // all invalid → default
+		{"api,invalid,notes", []string{"api", "notes"}}, // filter invalid
+		{" api , notes ", []string{"api", "notes"}},     // trim spaces
+		{"API,NOTES", []string{"api", "notes"}},         // case-insensitive
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
