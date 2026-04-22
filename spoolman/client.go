@@ -26,13 +26,13 @@ func New(baseURL string) *Client {
 }
 
 // UseSpool records filament consumption on spool spoolID.
-// It calls PATCH {baseURL}/api/v1/spool/{id}/use with body {"use_weight": <weightG>}.
+// It calls PUT {baseURL}/api/v1/spool/{id}/use with body {"use_weight": <weightG>}.
 // Returns an error for non-2xx responses.
 func (c *Client) UseSpool(ctx context.Context, spoolID int, weightG float64) error {
 	url := fmt.Sprintf("%s/api/v1/spool/%d/use", c.baseURL, spoolID)
 	body := fmt.Sprintf(`{"use_weight":%g}`, weightG)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, url, bytes.NewBufferString(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewBufferString(body))
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}
