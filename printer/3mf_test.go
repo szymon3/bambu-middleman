@@ -132,9 +132,9 @@ func TestExtractFromThreeMF(t *testing.T) {
 
 func TestParseSpoolmanID(t *testing.T) {
 	tests := []struct {
-		notes   string
-		wantID  int
-		wantOK  bool
+		notes  string
+		wantID int
+		wantOK bool
 	}{
 		{"spoolman#42", 42, true},
 		{"Bought 2025-01. SPOOLMAN#7 leftover spool", 7, true},
