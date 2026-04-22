@@ -208,7 +208,7 @@ func parseStatusString(s gcode.ParseStatus) string {
 	case gcode.ParsePartial:
 		return "PARTIAL"
 	default:
-		return "FAILED"
+		return "UNKNOWN"
 	}
 }
 
