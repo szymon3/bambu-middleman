@@ -11,13 +11,13 @@ type mockMQTTMessage struct {
 	payload []byte
 }
 
-func (m *mockMQTTMessage) Duplicate() bool    { return false }
-func (m *mockMQTTMessage) Qos() byte          { return 0 }
-func (m *mockMQTTMessage) Retained() bool     { return false }
-func (m *mockMQTTMessage) Topic() string      { return "" }
-func (m *mockMQTTMessage) MessageID() uint16  { return 0 }
-func (m *mockMQTTMessage) Payload() []byte    { return m.payload }
-func (m *mockMQTTMessage) Ack()               {}
+func (m *mockMQTTMessage) Duplicate() bool   { return false }
+func (m *mockMQTTMessage) Qos() byte         { return 0 }
+func (m *mockMQTTMessage) Retained() bool    { return false }
+func (m *mockMQTTMessage) Topic() string     { return "" }
+func (m *mockMQTTMessage) MessageID() uint16 { return 0 }
+func (m *mockMQTTMessage) Payload() []byte   { return m.payload }
+func (m *mockMQTTMessage) Ack()              {}
 
 func newTestClient() *MQTTClient {
 	return &MQTTClient{
