@@ -432,7 +432,7 @@ func parseFooterLine(line string, f *FooterSummary) {
 }
 
 func convertToFilamentUsage(lengthMM, diameter, density float64) FilamentUsage {
-	if diameter == 0 {
+	if diameter <= 0 {
 		return FilamentUsage{LengthMM: lengthMM}
 	}
 	radius := diameter / 2
