@@ -82,7 +82,7 @@ func main() {
 	if webuiAddr != "" {
 		srv := &http.Server{
 			Addr:         webuiAddr,
-			Handler:      webui.New(auditLogger, webuiBaseURL),
+			Handler:      webui.New(auditLogger, spoolClient, webuiBaseURL),
 			ReadTimeout:  5 * time.Second,
 			WriteTimeout: 10 * time.Second,
 			IdleTimeout:  60 * time.Second,

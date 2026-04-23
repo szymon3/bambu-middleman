@@ -36,7 +36,7 @@ func doRequest(h http.Handler, method, path string) *httptest.ResponseRecorder {
 // --- /spool/{id}/activate ---
 
 func TestGetActivate_ValidID(t *testing.T) {
-	h := webui.New(testAuditLogger(t), "http://localhost:8080")
+	h := webui.New(testAuditLogger(t), nil, "http://localhost:8080")
 	w := doRequest(h, http.MethodGet, "/spool/42/activate")
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200", w.Code)
@@ -51,7 +51,7 @@ func TestGetActivate_ValidID(t *testing.T) {
 }
 
 func TestGetActivate_InvalidID(t *testing.T) {
-	h := webui.New(testAuditLogger(t), "http://localhost:8080")
+	h := webui.New(testAuditLogger(t), nil, "http://localhost:8080")
 	tests := []string{"/spool/0/activate", "/spool/abc/activate", "/spool/1000000/activate", "/spool/-1/activate"}
 	for _, path := range tests {
 		w := doRequest(h, http.MethodGet, path)
@@ -63,7 +63,7 @@ func TestGetActivate_InvalidID(t *testing.T) {
 
 func TestPostActivate_ValidID(t *testing.T) {
 	audit := testAuditLogger(t)
-	h := webui.New(audit, "http://localhost:8080")
+	h := webui.New(audit, nil, "http://localhost:8080")
 	w := doRequest(h, http.MethodPost, "/spool/7/activate")
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200", w.Code)
@@ -82,7 +82,7 @@ func TestPostActivate_ValidID(t *testing.T) {
 }
 
 func TestPostActivate_InvalidID(t *testing.T) {
-	h := webui.New(testAuditLogger(t), "http://localhost:8080")
+	h := webui.New(testAuditLogger(t), nil, "http://localhost:8080")
 	w := doRequest(h, http.MethodPost, "/spool/0/activate")
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", w.Code)
@@ -92,7 +92,7 @@ func TestPostActivate_InvalidID(t *testing.T) {
 // --- /spool/{id}/qr ---
 
 func TestGetQR_Valid(t *testing.T) {
-	h := webui.New(testAuditLogger(t), "http://localhost:8080")
+	h := webui.New(testAuditLogger(t), nil, "http://localhost:8080")
 	w := doRequest(h, http.MethodGet, "/spool/42/qr")
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200", w.Code)
@@ -112,7 +112,7 @@ func TestGetQR_Valid(t *testing.T) {
 }
 
 func TestGetQR_InvalidID(t *testing.T) {
-	h := webui.New(testAuditLogger(t), "http://localhost:8080")
+	h := webui.New(testAuditLogger(t), nil, "http://localhost:8080")
 	w := doRequest(h, http.MethodGet, "/spool/abc/qr")
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", w.Code)
@@ -120,7 +120,7 @@ func TestGetQR_InvalidID(t *testing.T) {
 }
 
 func TestGetQR_NoBaseURL(t *testing.T) {
-	h := webui.New(testAuditLogger(t), "") // empty baseURL
+	h := webui.New(testAuditLogger(t), nil, "") // empty baseURL
 	w := doRequest(h, http.MethodGet, "/spool/42/qr")
 	if w.Code != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want 503", w.Code)
@@ -133,7 +133,7 @@ func TestGetQR_NoBaseURL(t *testing.T) {
 // --- /spool/active ---
 
 func TestGetActive_Inactive(t *testing.T) {
-	h := webui.New(testAuditLogger(t), "http://localhost:8080")
+	h := webui.New(testAuditLogger(t), nil, "http://localhost:8080")
 	w := doRequest(h, http.MethodGet, "/spool/active")
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200", w.Code)
@@ -155,7 +155,7 @@ func TestGetActive_Active(t *testing.T) {
 	if err := audit.SetActiveSpool(t.Context(), 42); err != nil {
 		t.Fatalf("SetActiveSpool: %v", err)
 	}
-	h := webui.New(audit, "http://localhost:8080")
+	h := webui.New(audit, nil, "http://localhost:8080")
 	w := doRequest(h, http.MethodGet, "/spool/active")
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200", w.Code)
@@ -175,7 +175,7 @@ func TestGetActive_Active(t *testing.T) {
 // --- /spool/clear ---
 
 func TestGetClear_Inactive(t *testing.T) {
-	h := webui.New(testAuditLogger(t), "http://localhost:8080")
+	h := webui.New(testAuditLogger(t), nil, "http://localhost:8080")
 	w := doRequest(h, http.MethodGet, "/spool/clear")
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200", w.Code)
@@ -190,7 +190,7 @@ func TestGetClear_Active(t *testing.T) {
 	if err := audit.SetActiveSpool(t.Context(), 5); err != nil {
 		t.Fatalf("SetActiveSpool: %v", err)
 	}
-	h := webui.New(audit, "http://localhost:8080")
+	h := webui.New(audit, nil, "http://localhost:8080")
 	w := doRequest(h, http.MethodGet, "/spool/clear")
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200", w.Code)
@@ -209,7 +209,7 @@ func TestPostClear(t *testing.T) {
 	if err := audit.SetActiveSpool(t.Context(), 3); err != nil {
 		t.Fatalf("SetActiveSpool: %v", err)
 	}
-	h := webui.New(audit, "http://localhost:8080")
+	h := webui.New(audit, nil, "http://localhost:8080")
 	w := doRequest(h, http.MethodPost, "/spool/clear")
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200", w.Code)
@@ -230,7 +230,7 @@ func TestPostClear(t *testing.T) {
 // --- body size limit ---
 
 func TestBodySizeLimit(t *testing.T) {
-	h := webui.New(testAuditLogger(t), "http://localhost:8080")
+	h := webui.New(testAuditLogger(t), nil, "http://localhost:8080")
 	// Send a 2 KiB body to POST /spool/clear — should not panic or stall.
 	req := httptest.NewRequest(http.MethodPost, "/spool/clear", strings.NewReader(strings.Repeat("x", 2048)))
 	w := httptest.NewRecorder()
