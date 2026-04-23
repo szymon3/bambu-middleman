@@ -1,0 +1,15 @@
+[Unit]
+Description=Bambu Observer — printer monitoring and filament tracking
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bambu-observer
+EnvironmentFile=/etc/bambu-observer/env
+ExecStart=/usr/local/bin/bambu-observer
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
