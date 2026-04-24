@@ -116,7 +116,7 @@ WEBUI_BASE_URL=http://192.168.1.10:8080
 2. Print a label: open `http://<server>/spool/<id>/label` in a browser and print the page. The label contains a QR code and the filament details (manufacturer, name, material). Add `?orientation=horizontal` for a wide label instead of the default tall one.
 3. Alternatively, program an NFC sticker with the URL `http://<server>/spool/<id>/activate`.
 
-> The raw QR code PNG is still available at `/spool/<id>/qr` if you need to embed it elsewhere.
+> A raw QR code PNG is also available at `/spool/<id>/qr` if you need to embed it elsewhere.
 
 ### Using it
 
