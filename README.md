@@ -113,8 +113,10 @@ WEBUI_BASE_URL=http://192.168.1.10:8080
 ### Setting up a spool
 
 1. Find your spool's ID in Spoolman (visible in the UI or API).
-2. Generate a QR code: open `http://<server>/spool/<id>/qr` in a browser and print/stick it on the spool.
+2. Print a label: open `http://<server>/spool/<id>/label` in a browser and print the page. The label contains a QR code and the filament details (manufacturer, name, material). Add `?orientation=horizontal` for a wide label instead of the default tall one.
 3. Alternatively, program an NFC sticker with the URL `http://<server>/spool/<id>/activate`.
+
+> The raw QR code PNG is still available at `/spool/<id>/qr` if you need to embed it elsewhere.
 
 ### Using it
 
@@ -186,6 +188,7 @@ Bought 2025-01. SPOOLMAN#42 leftover spool.
 | `GET` | `/spool/clear` | `text/html` | Confirmation page showing current active spool |
 | `POST` | `/spool/clear` | `text/html` | Clears the active spool; submitted by the confirmation form |
 | `GET` | `/spool/{id}/qr` | `image/png` | QR code encoding `WEBUI_BASE_URL/spool/{id}/activate`; cached 24 h |
+| `GET` | `/spool/{id}/label` | `text/html` | Print-ready label page: QR code + filament details (manufacturer, name, material). Add `?orientation=horizontal` for side-by-side layout (default: vertical). Requires `WEBUI_BASE_URL`. |
 
 Valid spool IDs are integers in the range 1–999999. Requests outside that range return `400 Bad Request`.
 
