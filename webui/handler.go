@@ -4,6 +4,7 @@ package webui
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -62,6 +63,7 @@ func New(audit *auditlog.Logger, spoolClient *spoolman.Client, baseURL string) h
 	mux.HandleFunc("GET /spool/{id}/activate", h.getActivate)
 	mux.HandleFunc("POST /spool/{id}/activate", h.postActivate)
 	mux.HandleFunc("GET /spool/{id}/qr", h.getQR)
+	mux.HandleFunc("GET /spool/{id}/label", h.getLabel)
 
 	return limitBody(mux)
 }
@@ -206,6 +208,120 @@ func (h *handler) getQR(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", strconv.Itoa(len(png)))
 	w.Header().Set("Cache-Control", "public, max-age=86400")
 	w.Write(png) //nolint:errcheck // write to ResponseWriter; error not actionable
+}
+
+// labelOrientation controls the layout of the label page.
+type labelOrientation string
+
+const (
+	orientationVertical   labelOrientation = "vertical"
+	orientationHorizontal labelOrientation = "horizontal"
+)
+
+// labelHTML builds a self-contained print-ready HTML label for a spool.
+// qrDataURI is a base64 data URI for the QR code PNG.
+// orientation controls whether the QR and details are stacked (vertical) or side-by-side (horizontal).
+// Filament details shown: Manufacturer, Name, Material (no Remaining Weight).
+func labelHTML(spool *spoolman.Spool, id int, qrDataURI string, orientation labelOrientation) string {
+	colorHex := ""
+	if spool != nil {
+		colorHex = spool.Filament.ColorHex
+	}
+
+	var rows strings.Builder
+	if spool != nil {
+		if spool.Filament.Vendor != nil && spool.Filament.Vendor.Name != "" {
+			fmt.Fprintf(&rows, `<tr><td>Manufacturer</td><td>%s</td></tr>`,
+				html.EscapeString(spool.Filament.Vendor.Name))
+		}
+		if spool.Filament.Name != "" {
+			fmt.Fprintf(&rows, `<tr><td>Name</td><td>%s</td></tr>`,
+				html.EscapeString(spool.Filament.Name))
+		}
+		if spool.Filament.Material != "" {
+			fmt.Fprintf(&rows, `<tr><td>Material</td><td>%s</td></tr>`,
+				html.EscapeString(spool.Filament.Material))
+		}
+	}
+
+	var tableHTML string
+	if rows.Len() > 0 {
+		tableHTML = fmt.Sprintf(`<table>%s</table>`, rows.String())
+	}
+
+	// layoutCSS provides orientation-specific overrides for .label and .separator.
+	var layoutCSS string
+	if orientation == orientationHorizontal {
+		layoutCSS = `
+    .label { flex-direction: row; max-width: 460px; }
+    .separator { width: 1px; height: auto; align-self: stretch; }
+    .details-section { align-items: center; }`
+	} else {
+		layoutCSS = `
+    .label { flex-direction: column; max-width: 260px; }
+    .separator { height: 1px; width: auto; }`
+	}
+
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spool #%d Label</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: sans-serif; margin: 1.5rem auto; padding: 0 1rem; text-align: center; }
+    img.qr { display: block; margin: 0 auto; width: 190px; height: 190px; image-rendering: pixelated; }
+    .label { display: inline-flex; border: 1.5px solid #000; border-radius: 10px; overflow: hidden; }
+    .qr-section { padding: 1rem; display: flex; align-items: center; justify-content: center; }
+    .separator { background: #000; opacity: 0.5; flex-shrink: 0; }
+    .details-section { padding: 0.75rem 1rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; }
+    .spool-meta { width: 100%%; text-align: left; }
+    .spool-meta strong { display: block; margin-bottom: 0.25rem; font-size: 1rem; color: #000; }
+    .spool-meta table { border-collapse: collapse; width: 100%%; }
+    .spool-meta td { padding: 0.1rem 0.3rem; font-size: 0.9rem; color: #111; }
+    .spool-meta td:first-child { color: #555; white-space: nowrap; padding-right: 0.6rem; }%s
+    @media print {
+      body { margin: 0; padding: 0.25in; }
+    }
+  </style>
+</head>
+<body>
+  <div class="label">
+    <div class="qr-section"><img class="qr" src="%s" alt="QR code for spool #%d"></div>
+    <div class="separator"></div>
+    <div class="details-section">%s<div class="spool-meta"><strong>#%d</strong>%s</div></div>
+  </div>
+</body>
+</html>`, id, layoutCSS, qrDataURI, id, spoolSVG(colorHex), id, tableHTML)
+}
+
+// GET /spool/{id}/label — print-ready HTML label with QR code and filament details.
+// Query param ?orientation=horizontal switches to side-by-side layout (default: vertical).
+func (h *handler) getLabel(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseID(r)
+	if !ok {
+		http.Error(w, "invalid spool id", http.StatusBadRequest)
+		return
+	}
+	if h.baseURL == "" {
+		http.Error(w, "WEBUI_BASE_URL not configured", http.StatusServiceUnavailable)
+		return
+	}
+	orientation := orientationVertical
+	if r.URL.Query().Get("orientation") == "horizontal" {
+		orientation = orientationHorizontal
+	}
+	spool := h.fetchSpool(r.Context(), id)
+	target := fmt.Sprintf("%s/spool/%d/activate", h.baseURL, id)
+	pngBytes, err := qrcode.Encode(target, qrcode.Medium, 200)
+	if err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	qrDataURI := "data:image/png;base64," + base64.StdEncoding.EncodeToString(pngBytes)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, labelHTML(spool, id, qrDataURI, orientation))
 }
 
 // GET /spool/active — JSON status of the active spool
